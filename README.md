@@ -2,7 +2,7 @@
 
 This project demonstrates simple public web app infrastructure hosted on AWS using Terraform.
 The web app is a default NGINX page hosted on ASG w/ 2 EC2 instances to ensure high availability.
-The deployment is achieved via Github action.
+GitHub Actions runs Terraform lint, validation, and plans only.
 
 ## Planned architecture
 
@@ -13,7 +13,7 @@ The deployment is achieved via Github action.
 - Auto Scaling Group maintains at least two EC2 instances across two AZs.
 - Terminated or unhealthy instances are replaced automatically using EC2 and load balancer health checks.
 - Cloud-init to pull NGINX image from ECR. (The ECR image is the default NGINX image)
-- Terraform manages all infrastructure; deployment via Github. Auth to AWS via OIDC.
+- Terraform manages all infrastructure; GitHub Actions authenticates through OIDC for plans.
 - Use S3 for Terraform backend state.
 
 ## Planned code layout
@@ -35,7 +35,9 @@ The deployment is achieved via Github action.
   - Cloudwatch logs for debug purpose only.
   - Although serverless infrastructure can be used, this project is to demonstrate web app hosted on EC2 instances.
 
-## Migrate tf state to s3
+## Quick start
+
+### Migrate tf state to s3
 
 ```sh
 # Comment the backend.tf file content completely when first time to bring up the infra
@@ -48,4 +50,38 @@ terraform output
 # Migrate tf state to S3 bucket
 terraform init -migrate-state \
   -backend-config="bucket=${bucket_name}"
+```
+
+### Set up github OIDC manually
+
+On AWS console, set up IdP:
+
+- Provider type: OIDC
+- Provider URL: https://token.actions.githubusercontent.com
+- Audience: sts.amazonaws.com
+
+Create role with below custom trust policy, replace ACCOUNT_ID, OWNER, OWNER_ID, REPO, and REPO_ID
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": [
+            "repo:OWNER@OWNER_ID/REPO@REPO_ID:ref:refs/heads/main",
+            "repo:OWNER@OWNER_ID/REPO@REPO_ID:pull_request"
+          ]
+        }
+      }
+    }
+  ]
+}
 ```
