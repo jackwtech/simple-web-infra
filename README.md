@@ -34,3 +34,18 @@ The deployment is achieved via Github action.
   - Everything in the public subnet for cost saving (avoid using NAT gateway).
   - Cloudwatch logs for debug purpose only.
   - Although serverless infrastructure can be used, this project is to demonstrate web app hosted on EC2 instances.
+
+## Migrate tf state to s3
+
+```sh
+# Comment the backend.tf file content completely when first time to bring up the infra
+terrform init
+terrform apply
+
+# Note down the S3 bucket name after first terraform apply or run below
+terraform output
+
+# Migrate tf state to S3 bucket
+terraform init -migrate-state \
+  -backend-config="bucket=${bucket_name}"
+```
