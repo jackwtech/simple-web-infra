@@ -19,3 +19,9 @@ variable "availability_zones" {
   type        = list(string)
   default     = ["ap-southeast-2a", "ap-southeast-2b"]
 }
+
+variable "web_app_image_tag" {
+  description = "Docker Hub official NGINX tag; must support ARM64."
+  type        = string
+  default     = "stable-alpine3.24-slim"
+}
