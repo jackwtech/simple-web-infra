@@ -4,3 +4,11 @@ module "tf_state" {
 
   state_bucket_name = var.project
 }
+
+module "network" {
+  source = "./network"
+
+  project            = var.project
+  vpc_cidr           = var.vpc_cidr
+  availability_zones = var.availability_zones
+}

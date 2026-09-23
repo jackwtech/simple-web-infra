@@ -20,7 +20,7 @@ GitHub Actions runs Terraform lint, validation, and plans only.
 
 - `infra/`: Terraform root configuration, variables, outputs, and example inputs.
 - `infra/tf-state/`: S3 state bucket module.
-- `infra/network/`: VPC, subnets, routing, and security groups.
+- `infra/network/`: VPC, subnets, IGW, and routing.
 - `infra/web-app/`: load balancer, launch template, and Auto Scaling Group.
 - Apply `project` tag `simple-web-app-infra`
 
