@@ -10,17 +10,19 @@ GitHub Actions runs Terraform lint, validation, and plans only.
 
 - Region: `ap-southeast-2` (Sydney).
 - Application Load Balancer distributes traffic across healthy instances.
-- Auto Scaling Group maintains at least two EC2 instances across two AZs.
+- Auto Scaling Group maintains two EC2 instances across two AZs.
 - Terminated or unhealthy instances are replaced automatically using EC2 and load balancer health checks.
 - Cloud-init to pull NGINX image from ECR. (The ECR image is the default NGINX image)
+  - Note: change to pull NGINX image from docker hub for simplicity.
+  - Build image step is not implemented.
 - Terraform manages all infrastructure; GitHub Actions authenticates through OIDC for plans.
 - Use S3 for Terraform backend state.
 
 ## Planned code layout
 
-- `infra/`: Terraform root configuration, variables, outputs, and example inputs.
+- `infra/`: Terraform root configuration, variables, outputs.
 - `infra/tf-state/`: S3 state bucket module.
-- `infra/network/`: VPC, subnets, routing, and security groups.
+- `infra/network/`: VPC, subnets, IGW, and routing.
 - `infra/web-app/`: load balancer, launch template, and Auto Scaling Group.
 - Apply `project` tag `simple-web-app-infra`
 

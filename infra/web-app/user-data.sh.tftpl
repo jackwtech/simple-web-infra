@@ -1,0 +1,103 @@
+#!/bin/bash
+set -euxo pipefail
+
+# Call the ASG launch lifecycle hook with the instance role credentials.
+imds_token=$(curl -fsS -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 3600" \
+    http://169.254.169.254/latest/api/token)
+imds() {
+    curl -fsS -H "X-aws-ec2-metadata-token: $imds_token" "http://169.254.169.254/latest/meta-data/$1"
+}
+instance_id=$(imds instance-id)
+lifecycle() (
+    set +x # keep credentials out of the logs
+    action=$1
+    shift
+    read -r key secret session < <(imds "iam/security-credentials/$(imds iam/security-credentials/)" |
+        python3 -c 'import json, sys; c = json.load(sys.stdin); print(c["AccessKeyId"], c["SecretAccessKey"], c["Token"])')
+    curl -fsS -o /dev/null --aws-sigv4 'aws:amz:${region}:autoscaling' --user "$key:$secret" \
+        -H "x-amz-security-token: $session" -d Version=2011-01-01 -d Action="$action" \
+        -d AutoScalingGroupName='${asg_name}' -d LifecycleHookName='${hook_name}' \
+        -d InstanceId="$instance_id" "$@" https://autoscaling.${region}.amazonaws.com/
+)
+
+send_heartbeat() {
+    lifecycle RecordLifecycleActionHeartbeat
+}
+
+# Registers the instance with the target group; ELB health checks start now.
+complete_lifecycle_action() {
+    echo "complete_lifecycle_action"
+    lifecycle CompleteLifecycleAction -d LifecycleActionResult=CONTINUE
+}
+
+install_cloudwatch_agent() {
+    echo "install_cloudwatch_agent"
+    send_heartbeat
+
+    local arch
+    arch=$(dpkg --print-architecture)
+
+    sudo apt-get update
+    curl -fsSLo /tmp/amazon-cloudwatch-agent.deb \
+        "https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/$arch/latest/amazon-cloudwatch-agent.deb"
+    sudo apt-get install -y /tmp/amazon-cloudwatch-agent.deb
+
+    sudo tee /opt/aws/amazon-cloudwatch-agent/etc/web-app.json > /dev/null <<'EOF'
+${cloudwatch_config}
+EOF
+
+    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+        -a fetch-config -m ec2 -s \
+        -c file:/opt/aws/amazon-cloudwatch-agent/etc/web-app.json
+}
+
+install_docker() {
+    echo "install_docker"
+    send_heartbeat
+
+    local arch codename
+    arch=$(dpkg --print-architecture)
+    codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+
+    # Add Docker's official GPG key:
+    sudo apt-get update
+    sudo apt-get install -y ca-certificates curl
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+    # Add the repository to Apt sources:
+    sudo tee /etc/apt/sources.list.d/docker.sources > /dev/null <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $codename
+Components: stable
+Architectures: $arch
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+
+    sudo apt-get update
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+
+run_nginx() {
+    echo "run_nginx"
+    send_heartbeat
+
+    # Require HTTP 200. No restart policy: the ASG replaces unhealthy instances.
+    docker pull nginx:${image}
+    docker run --detach --name web-app --publish 80:80 nginx:${image}
+    sleep 10 # small delay to wait for nginx start listening
+    test "$(curl --silent --show-error --max-time 10 --retry 10 --retry-delay 1 \
+        --retry-connrefused --output /dev/null --write-out '%%{http_code}' \
+        http://127.0.0.1/)" = 200
+}
+
+main() {
+    install_cloudwatch_agent
+    install_docker
+    run_nginx
+    complete_lifecycle_action
+}
+
+main
