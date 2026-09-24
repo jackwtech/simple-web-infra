@@ -45,7 +45,7 @@ resource "aws_launch_template" "this" {
   }
 
   user_data = base64encode(templatefile("${path.module}/user-data.sh.tftpl", {
-    image     = "${var.image_tag}"
+    image     = var.image_tag
     region    = data.aws_region.current.region
     asg_name  = local.asg_name
     hook_name = local.launch_hook_name
